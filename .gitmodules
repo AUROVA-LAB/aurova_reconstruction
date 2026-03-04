@@ -1,0 +1,15 @@
+[submodule "hybrid_3dgs_mesh/submodules/colmap"]
+	path = hybrid_3dgs_mesh/submodules/colmap
+	url = git@github.com:Aleoli2/colmap.git
+[submodule "hybrid_3dgs_mesh/submodules/glomap_pose_prior"]
+	path = hybrid_3dgs_mesh/submodules/glomap_pose_prior
+	url = git@github.com:Aleoli2/glomap.git
+[submodule "hybrid_3dgs_mesh/submodules/Octree-GS"]
+	path = hybrid_3dgs_mesh/submodules/Octree-GS
+	url = git@github.com:Aleoli2/Octree-GS.git
+[submodule "hybrid_3dgs_mesh/submodules/hierarchical-3d-gaussians"]
+	path = hybrid_3dgs_mesh/submodules/hierarchical-3d-gaussians
+	url = git@github.com:Aleoli2/hierarchical-3d-gaussians.git
+[submodule "hybrid_3dgs_mesh/submodules/gaussian-opacity-fields"]
+	path = hybrid_3dgs_mesh/submodules/gaussian-opacity-fields
+	url = git@github.com:Aleoli2/gaussian-opacity-fields.git

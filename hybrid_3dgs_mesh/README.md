@@ -7,7 +7,7 @@ For retrieving the mesh from LiDAR point clouds, [ImMesh](https://github.com/Ale
 
 For optimizing the 3D Gaussian Splatting models, several SOTA methods have been used, building Docker images for each of them. Clone this repository:
 ```
-git clone --recurse-submodules https://github.com/Aleoli2/aurova_reconstruction.git 
+git clone --recurse-submodules https://github.com/AUROVA-LAB/aurova_reconstruction.git
 ```
 To build the Docker images, change the CUDA_ARCHITECTURES and TORCH_CUDA_ARCH_LIST in the next instructions to the architecture of your GPU.
 ### 1. COLMAP

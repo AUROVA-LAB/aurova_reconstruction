@@ -3,7 +3,27 @@
 This repository has the methods to generate the 3D Hybrid Reconstructions of the paper "Sim-to-Real Transfer by Hybrid 3D Gaussian Splatting and LiDAR Reconstruction for Autonomous Driving".
 
 ## Installation
-For retrieving the mesh from LiDAR point clouds, [ImMesh](https://github.com/Aleoli2/ImMesh) is used in a computer with Ubuntu 20.04 and ROS Noetic (although it should work with other ROS 1 versions). Follow its instructions to install it in your catkin workspace. The forked version has the launch file `mapping_ouster.launch` that also saves the trajectory, if using other sensor configuration use it as template for generating the mesh. Also, install follow the library [evo](https://github.com/MichaelGrupp/evo).
+This repository is prepared for ROS 1 (tested with Noetic) and 2 (tested with Jazzy). To install the ROS 2 version, check out the branch ros2.
+
+For retrieving the mesh from LiDAR point clouds, install [ImMesh](https://github.com/Aleoli2/ImMesh).
+```
+sudo apt-get install ros-noetic-cv-bridge ros-noetic-tf ros-noetic-message-filters ros-noetic-image-transport*
+sudo apt-get install -y libcgal-dev pcl-tools
+sudo apt-get install -y libgl-dev libglm-dev libglfw3-dev libglew-dev libglw1-mesa-dev 
+sudo apt-get install -y libcgal-dev libxkbcommon-x11-dev
+
+cd PATH/TO/aurova_ws/src
+git clone https://github.com/Livox-SDK/livox_ros_driver.git
+git clone https://github.com/Aleoli2/ImMesh.git
+cd ..
+catkin_make
+source devel/setup.bash
+```
+
+This version has the launch file `mapping_ouster.launch` that also saves the trajectory, if using other sensor configuration use it as template for generating the mesh. Also, install follow the library [evo](https://github.com/MichaelGrupp/evo):
+```
+pip install evo
+```
 
 For optimizing the 3D Gaussian Splatting models, several SOTA methods have been used, building Docker images for each of them. Clone this repository:
 ```
@@ -94,22 +114,23 @@ glomap mapper --database_path colmap/database.db --image_path images/ --output_p
 
 Obtain the undistorted images:
 ```
+cd /hybrid_3dgs_mesh/data_utils
 ./postporcess_colmap.sh
 ```
 
 Align the trajectories using evo library. Run in the **other terminal** (outside Docker):
 ```
-cd hybrid_3dgs_mesh/data_utils
 ./align_trajectories.sh
 ```
 
 Finally, in the **Docker terminal** pass the result to binary and exit from Docker:
 ```
+cd /workspace
 colmap model_converter --output_path sparse/0 --output_type BIN --input_path sparse
 ```
 
 ## Obtain the 3DGS model
-Optimize the 3DGS model in one of the methods (for sim2real application, best results are obtained with Octree-GS in our work). The name of the scene is set in the environment variable, the output will be save in hybrid_3dgs_mesh/outputs/NAME.
+Optimize the 3DGS model in one of the methods (for sim2real application, best results are obtained with Octree-GS in our work). The output name is set in the environment variable, the output will be save in hybrid_3dgs_mesh/outputs/NAME/(Octree-GS,gof or hierarchical)/$DATE.
 ### 1. Octree-GS
 ```
 
@@ -130,7 +151,7 @@ docker run --gpus all --ipc=host -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11
 ```
 export NAME=output_name
 cd /workspace/submodules/gaussian-opacity-fields/
-python train.py -s /workspace/data/${NAME} -m /workspace/outputs/${NAME}/gof/$(date "+%y_%m_%d_%H_%M") --use_decoupled_appearance --densify_until_iter 7500 --position_lr_init 0.000048 --position_lr_final 0.00000048 --scaling_lr 0.0015 --densify_grad_threshold 0.0004
+python train.py -s /workspace/data -m /workspace/outputs/${NAME}/gof/$(date "+%y_%m_%d_%H_%M") --use_decoupled_appearance --densify_until_iter 7500 --position_lr_init 0.000048 --position_lr_final 0.00000048 --scaling_lr 0.0015 --densify_grad_threshold 0.0004
 ```
 
 ### 3. Hierarchical-3DGS (H-3DGS)

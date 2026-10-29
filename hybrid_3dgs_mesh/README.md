@@ -3,11 +3,30 @@
 This repository has the methods to generate the 3D Hybrid Reconstructions of the paper "Sim-to-Real Transfer by Hybrid 3D Gaussian Splatting and LiDAR Reconstruction for Autonomous Driving".
 
 ## Installation
-For retrieving the mesh from LiDAR point clouds, [ImMesh](https://github.com/Aleoli2/ImMesh) is used in a computer with Ubuntu 20.04 and ROS Noetic (although it should work with other ROS 1 versions). Follow its instructions to install it in your catkin workspace. The forked version has the launch file `mapping_ouster.launch` that also saves the trajectory, if using other sensor configuration use it as template for generating the mesh. Also, install follow the library [evo](https://github.com/MichaelGrupp/evo).
+For retrieving the mesh from LiDAR point clouds, install the migrated version of [ImMesh](https://github.com/Aleoli2/ImMesh) to ROS 2 Jazzy:
+```
+sudo apt-get install ros-jazzy-cv-bridge ros-jazzy-tf ros-jazzy-message-filters ros-jazzy-image-transport*
+sudo apt-get install -y libcgal-dev pcl-tools
+sudo apt-get install -y libgl-dev libglm-dev libglfw3-dev libglew-dev libglw1-mesa-dev 
+sudo apt-get install -y libcgal-dev libxkbcommon-x11-dev
+
+cd PATH/TO/aurova_ws/src
+git clone https://github.com/Aleoli2/livox_ros_driver2.git
+git clone https://github.com/Aleoli2/ImMesh.git --branch ros2
+cd ../
+colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-up-to im_mesh
+chmod +x PATH/TO/aurova_ws/src/ImMesh/launch/record_bag.sh
+source install/setup.bash
+```
+
+This version has the launch file `mapping_ouster.launch` that also saves the trajectory, if using other sensor configuration use it as template for generating the mesh. Also, install follow the library [evo](https://github.com/MichaelGrupp/evo):
+```
+pip install evo
+```
 
 For optimizing the 3D Gaussian Splatting models, several SOTA methods have been used, building Docker images for each of them. Clone this repository:
 ```
-git clone --recurse-submodules https://github.com/AUROVA-LAB/aurova_reconstruction.git
+git clone --recurse-submodules https://github.com/AUROVA-LAB/aurova_reconstruction.git --branch ros2
 ```
 To build the Docker images, change the CUDA_ARCHITECTURES and TORCH_CUDA_ARCH_LIST in the next instructions to the architecture of your GPU.
 ### 1. COLMAP
@@ -36,24 +55,24 @@ docker build --build-arg TORCH_CUDA_ARCH_LIST="8.9" --build-arg CUDA_ARCHITECTUR
 ```
 
 ## Extract the mesh
-Firstly, record a rosbag of the desired scene, saving the images and the LiDAR point clouds (we saved front-view depth images and reconstruct the point cloud from them to reduce storage usage). Save the rosbag file as `scene.bag` in the directory for your dataset, and then run:
+Firstly, record a rosbag of the desired scene, saving the images and the LiDAR point clouds (we saved front-view depth images and reconstruct the point cloud from them to reduce storage usage). Save the rosbag directory as `scene_bag` in the directory for your dataset, and then run:
 
 ```
 cd hybrid_3dgs_mesh/data_utils
 export DATASET_DIR=your_path_to_dataset
-python prepare_ROS_data.py --rosbag ${DATASET_DIR}/scene.bag --output ${DATASET_DIR}
+python prepare_ROS_data.py --rosbag ${DATASET_DIR}/scene_bag --output ${DATASET_DIR}
 ```
 
 This script extracts the images from the rosbag and name them respect their timestamp. There are some arguments to specify the name of the topics, skip some initial frames or specify the resolution of the images. Then, set the rosbag path in the ImMesh launch file and run it:
 ```
-roslaunch ImMesh mapping_ouster.launch 
+ros2 launch im_mesh mapping_ouster.launch 
 ```
-Use the ImMesh GUI to save the mesh. Then, copy the generated rosbag in `your_catkin_ws/src/ImMesh/Log` to `${DATASET_DIR}/immesh.bag`. Extract the pose priors of the images using both rosbags:
+Use the ImMesh GUI to save the mesh. Then, copy the generated rosbag in `PATH/TO/aurova_ws/src/ImMesh/Log` to `${DATASET_DIR}/immesh_bag`. Extract the pose priors of the images using both rosbags:
 ```
-python get_pose_prior.py --rosbag_path ${DATASET_DIR}/immesh.bag --rosbag_images ${DATASET_DIR}/scene.bag --images_folder ${DATASET_DIR}/images/ --output ${DATASET_DIR}
+python get_pose_prior.py --rosbag_path ${DATASET_DIR}/immesh_bag --rosbag_images ${DATASET_DIR}/scene_bag --images_folder ${DATASET_DIR}/images/ --output ${DATASET_DIR}
 ```
 
-For adding the meshes to CARLA simulator, transform the output `.ply` to `.fbx`. We used Blender to import them and esport them, including only the mesh in Object Types and smoothing the Faces in Geometry, and leave the other parameters as default.
+For adding the meshes to CARLA simulator, transform the output `.ply` to `.fbx`. We used Blender to import them and export them, including only the mesh in Object Types and smoothing the Faces in Geometry, and leave the other parameters as default.
 
 ![Export to fbx](media/blender_export.png)
 ## Obtain the camera poses
@@ -74,6 +93,7 @@ Run the SfM using COLMAP or GLOMAP in the Docker terminal:
 
 1. COLMAP
 ```
+cd /workspace
 colmap pose_prior_mapper --database_path colmap/database.db --image_path images/ --output_path sparse/
 ```
 Check the result with `colmap gui`. If the reconstruction is incorrect, there are some arguments that may improve the result.
@@ -84,6 +104,7 @@ COLMAP may generate several reconstructions. Move the correct one to `sparse/0`.
 
 2. GLOMAP
 ```
+cd /workspace
 glomap mapper --database_path colmap/database.db --image_path images/ --output_path sparse/ --PosePrior.use_pose_position_prior 1 --PosePrior.prior_position_std_x 0.5 --PosePrior.prior_position_std_y 0.5 --PosePrior.prior_position_std_z 0.5 --PosePrior.overwrite_priors_covariance 1 --PosePrior.use_robust_loss_on_prior_position 1 
 ```
 The prior_position_std can be tune if the reconstruction is incorrect, or you can use the version without pose prior.
@@ -94,22 +115,23 @@ glomap mapper --database_path colmap/database.db --image_path images/ --output_p
 
 Obtain the undistorted images:
 ```
-./postporcess_colmap.sh
+cd /hybrid_3dgs_mesh/data_utils
+./postprocess_colmap.sh
 ```
 
 Align the trajectories using evo library. Run in the **other terminal** (outside Docker):
 ```
-cd hybrid_3dgs_mesh/data_utils
 ./align_trajectories.sh
 ```
 
 Finally, in the **Docker terminal** pass the result to binary and exit from Docker:
 ```
+cd /workspace
 colmap model_converter --output_path sparse/0 --output_type BIN --input_path sparse
 ```
 
 ## Obtain the 3DGS model
-Optimize the 3DGS model in one of the methods (for sim2real application, best results are obtained with Octree-GS in our work). The name of the scene is set in the environment variable, the output will be save in hybrid_3dgs_mesh/outputs/NAME.
+Optimize the 3DGS model in one of the methods (for sim2real application, best results are obtained with Octree-GS in our work). The output name is set in the environment variable, the output will be save in hybrid_3dgs_mesh/outputs/NAME/(Octree-GS,gof or hierarchical)/$DATE.
 ### 1. Octree-GS
 ```
 
@@ -130,7 +152,7 @@ docker run --gpus all --ipc=host -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11
 ```
 export NAME=output_name
 cd /workspace/submodules/gaussian-opacity-fields/
-python train.py -s /workspace/data/${NAME} -m /workspace/outputs/${NAME}/gof/$(date "+%y_%m_%d_%H_%M") --use_decoupled_appearance --densify_until_iter 7500 --position_lr_init 0.000048 --position_lr_final 0.00000048 --scaling_lr 0.0015 --densify_grad_threshold 0.0004
+python train.py -s /workspace/data -m /workspace/outputs/${NAME}/gof/$(date "+%y_%m_%d_%H_%M") --use_decoupled_appearance --densify_until_iter 7500 --position_lr_init 0.000048 --position_lr_final 0.00000048 --scaling_lr 0.0015 --densify_grad_threshold 0.0004
 ```
 
 ### 3. Hierarchical-3DGS (H-3DGS)
@@ -144,7 +166,7 @@ cd /workspace/data_utils
 ./run_h-3dgs.sh
 ```
 
-This method transform the scene to divide it into chunks, it is necesary to calculate the transformation between the model and the real world. Run the Docker image of COLMAP in the **other terminal**:
+This method transform the scene to divide it into chunks, it is necesary to calculate the transformation between the model and the real world. Run the Docker image of COLMAP in **another terminal**:
 ```
 docker run --rm --gpus all --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 -it --net=host --privileged -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix:rw -v /dev:/dev -v ${DATASET_DIR}:/workspace colmap
 cd workspace

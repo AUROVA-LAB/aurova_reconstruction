@@ -7,7 +7,6 @@ import cv2
 from cv_bridge import CvBridge
 import os
 import csv
-import rosbag  
 
 class RosbagSynchronizer:
     def __init__(self):
@@ -33,7 +32,6 @@ class RosbagSynchronizer:
         self.csv_file_handle = open(self.csv_file, mode='w')
         self.csv_writer = csv.writer(self.csv_file_handle)
         self.csv_writer.writerow(["image_filename", "timestamp"])
-        # self.corrected_path_bag = rosbag.Bag('./trajectory_sync/path.bag', 'w')
 
         # Variables
         self.current_time = None

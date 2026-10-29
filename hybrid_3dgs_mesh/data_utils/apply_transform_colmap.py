@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import json
-import tf.transformations as tr
+import tf_transformations as tr
 from copy import copy
 import argparse
 
@@ -187,8 +187,11 @@ if __name__ == '__main__':
 
     reconstruction = Reconstruction()
     reconstruction.read_text(args.input)
+    print("Read ",args.input)
     transform = readTransform('trajectory_sync/transform.json')
+    print("Transform:\n",transform)
     reconstruction.transform(transform)
+    print("Transform applied")
 
     #Pose refinement
     image_id = 1
@@ -211,3 +214,4 @@ if __name__ == '__main__':
                     reconstruction.images[image_id]["save"] = False
                 image_id+=1
     reconstruction.write_text(args.output)
+    print("Write output")

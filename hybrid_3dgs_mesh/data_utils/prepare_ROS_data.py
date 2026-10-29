@@ -1,10 +1,12 @@
 import argparse
 import os
 import numpy as np
-import rosbag
+from rosbags.highlevel import AnyReader
+from rosbags.typesys import Stores, get_typestore
 from cv_bridge import CvBridge
 import cv2
 import json
+from pathlib import Path
 
 
 if __name__ == "__main__":
@@ -24,9 +26,8 @@ if __name__ == "__main__":
                         help='Height of the images (Default: 720)')
 
     args = parser.parse_args()
-
+    typestore = get_typestore(Stores.ROS2_JAZZY)
     # Read rosbag
-    bag = rosbag.Bag(args.rosbag)
     frame=-1
     frames_between_samples=15 #The topic is published at 15Hz, so a sample every second
     previous_frame=-frames_between_samples
@@ -40,23 +41,25 @@ if __name__ == "__main__":
     if not os.path.exists(args.output+"/images"):
         os.mkdir(args.output+"/images")
     
-    topics=(args.camera_topic+"/image_raw")
+    topic=(args.camera_topic+"/image_raw")
+    count=0
+    with AnyReader([Path(args.rosbag)], default_typestore=typestore) as reader:
+        for connection, timestamp, rawdata in reader.messages():
+            if connection.topic==topic:
+                frame+=1
+                msg = typestore.deserialize_cdr(rawdata, connection.msgtype)
+                if frame > args.start_frame and frame-previous_frame>=frames_between_samples:
+                    cvimage=bridge.imgmsg_to_cv2(msg, "bgr8")
+                    cv2.imshow("Image",cvimage)
+                    key = cv2.waitKey(10000)
+                    if key == 13: 
+                        sec, nsec = str(msg.header.stamp.sec), str(msg.header.stamp.nanosec)
+                        cv2.imwrite(args.output+"/images/{}_{}.png".format(sec,nsec[:2]),cvimage)
+                        count+=1
+                        previous_frame=frame
+                        print("Saving frame {}".format(frame))
+                    elif key == 27:
+                        break
 
-    for topic,msg,t in bag.read_messages(topics=topics):
-        frame+=1
-        if frame > args.start_frame and frame-previous_frame>=frames_between_samples:
-            t = t.to_sec()
-            cvimage=bridge.imgmsg_to_cv2(msg, "bgr8")
-            cv2.imshow("Image",cvimage)
-            key = cv2.waitKey(10000)
-            if key == 13: 
-                sec, nsec = str(t).split(".")   
-                cv2.imwrite(args.output+"/images/{}_{}.png".format(sec,nsec[:2]),cvimage)
-                previous_frame=frame
-                print("Saving frame {}".format(frame))
-            elif key == 27:
-                break
-
-    bag.close()
     cv2.destroyAllWindows()
     print("Finished")

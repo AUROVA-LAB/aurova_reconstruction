@@ -1,10 +1,13 @@
 import argparse
 import os
 import numpy as np
-import rosbag
-from geometry_msgs.msg import PoseStamped, Quaternion, Point
-from tf.transformations import *
-import rospy
+from rosbags.highlevel import AnyReader
+from rosbags.rosbag2 import Writer
+from rosbags.typesys import Stores, get_typestore
+from geometry_msgs.msg import PoseStamped
+from tf_transformations import *
+from pathlib import Path
+import shutil
 
 
 if __name__ == "__main__":
@@ -20,39 +23,47 @@ if __name__ == "__main__":
                         help='images.txt output from colmap')
 
     args = parser.parse_args()
-
+    typestore = get_typestore(Stores.ROS2_JAZZY)
     # Read rosbag
-    bag = rosbag.Bag(args.rosbag_images)
-    for topic, msg, t in bag.read_messages():
-        first_time = t.to_sec()
-        break
-    bag.close()
+    with AnyReader([Path(args.rosbag_images)], default_typestore=typestore) as reader:
+        for connection, timestamp, rawdata in reader.messages():
+            first_time = timestamp
+            break
 
-    bag = rosbag.Bag(args.rosbag_path)
 
-    time_diference = None
-    for topic, msg, t in bag.read_messages(topics=[args.pose_topic]):
-        last_msg=msg
-    time_diference = last_msg.poses[0].header.stamp.to_sec()-first_time
-    bag.close()
+    with AnyReader([Path(args.rosbag_path)], default_typestore=typestore) as reader:
+        for connection, timestamp, rawdata in reader.messages():
+            last_msg = rawdata
+    last_msg = typestore.deserialize_cdr(last_msg, connection.msgtype)
+    timestamp=last_msg.poses[0].header.stamp
+    time_diference = timestamp.sec*10**9+timestamp.nanosec-first_time
 
-    output_bag = rosbag.Bag('./trajectory_sync/colmap_path.bag', 'w')
-    correct_path_bag = rosbag.Bag('./trajectory_sync/immesh_path.bag', 'w')
+    if os.path.exists('./trajectory_sync/immesh_path'):
+        shutil.rmtree('./trajectory_sync/immesh_path')
+    with Writer('./trajectory_sync/immesh_path', version=Writer.VERSION_LATEST) as correct_path_bag:
+        conn=correct_path_bag.add_connection(args.pose_topic, "geometry_msgs/msg/PoseStamped", typestore=typestore)
+        for pose in last_msg.poses:
+            headstamp = pose.header.stamp.sec * 10**9 + pose.header.stamp.nanosec -time_diference
+            pose.header.stamp.sec = headstamp // 10**9
+            pose.header.stamp.nanosec = headstamp % 10**9
+            outdata = typestore.serialize_cdr(pose, conn.msgtype)
+            correct_path_bag.write(conn,headstamp,outdata)
 
-    for pose in last_msg.poses:
-        pose.header.stamp = rospy.Time(pose.header.stamp.to_sec()-time_diference)
-        correct_path_bag.write(args.pose_topic,pose,pose.header.stamp)
-    correct_path_bag.close() 
 
-    with open(args.images_colmap) as f:
+    if os.path.exists('./trajectory_sync/colmap_path'):
+        shutil.rmtree('./trajectory_sync/colmap_path')
+    with open(args.images_colmap) as f, Writer('./trajectory_sync/colmap_path', version=Writer.VERSION_LATEST) as output_bag:
+        conn=output_bag.add_connection(args.pose_topic, "geometry_msgs/msg/PoseStamped", typestore=typestore)
         for i, line in enumerate(f):
             if i%2!=0 or i<4: continue
             line = line.split(" ")
             pose = PoseStamped()
             try:
                 sec, decimals = line[9].split(".")[0].split("_")
-                image_time = float(sec)+float(decimals)/(10**len(decimals))
-                pose.header.stamp = rospy.Time(image_time)
+                nanosec = float(decimals)/(10**len(decimals))*10**9
+                sec, nanosec = int(sec), int(nanosec)
+                pose.header.stamp.sec = sec
+                pose.header.stamp.nanosec = nanosec
                 # Inverse the transform of colmap
                 quat = np.array([float(line[2]),float(line[3]),float(line[4]),float(line[1])])
                 R = quaternion_matrix(quat)[:3,:3]
@@ -61,12 +72,13 @@ if __name__ == "__main__":
                 transform = np.eye((4))
                 transform[:3,:3] = R.transpose()
                 quat_inv = quaternion_from_matrix(transform)
-                pose.pose.position = Point(t[0],t[1],t[2])
-                pose.pose.orientation = Quaternion(quat_inv[0],quat_inv[1],quat_inv[2],quat_inv[3])
-                output_bag.write(args.pose_topic,pose,pose.header.stamp)
+                pose.pose.position.x, pose.pose.position.y, pose.pose.position.z  = t[0],t[1],t[2]
+                pose.pose.orientation.x,pose.pose.orientation.y,pose.pose.orientation.z,pose.pose.orientation.w = \
+                    quat_inv[0],quat_inv[1],quat_inv[2],quat_inv[3]
+                outdata = typestore.serialize_cdr(pose, conn.msgtype)
+                output_bag.write(conn,sec*10**9+nanosec,outdata)
             except ValueError:
                 pass
 
     
-    output_bag.close()
     print("Finished")
